@@ -1,1 +1,1 @@
-~/ryu/bin/ryu-manager thramos_test.py --observe-links
+~/ryu/bin/ryu-manager state_monitor.py --observe-links
