@@ -12,9 +12,11 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib import hub
-from ryu.topology.api import get_all_link, get_all_switch
+from ryu.topology.api import get_all_link
 
 MAX32BITS = 1 << 31
+
+# Always rx first
 
 class LinkStats(object):
 
@@ -22,14 +24,33 @@ class LinkStats(object):
         self.bw = 0.0
         self.latency = 0.0
         self.drop = 0.0
-        self.cumulative_tx = 0
-        self.cumulative_rx = 0
-        self.cumulative_tx_errors = 0
-        self.cumulative_rx_errors = 0
-        self.last_update = 0
+
+        self.cumulative_tx = {'packets': 0, 'errors': 0, 'bytes': 0, 'dropped': 0}
+        self.speed_tx = {'packets': 0, 'errors': 0, 'bytes': 0, 'dropped': 0}
+        self.cumulative_rx = {
+            'errors': 0,'packets': 0, 'bytes': 0, 'crc_err': 0,
+            'over_err': 0, 'dropped': 0, 'frame_err': 0}
+        self.speed_rx = {
+            'errors': 0,'packets': 0, 'bytes': 0, 'crc_err': 0,
+            'over_err': 0, 'dropped': 0, 'frame_err': 0}
+
+        self.last_update = time.time()
 
     def __str__(self):
-        return "Stats: {} {} {}".format(self.bw, self.latency, self.drop)
+        return "Stats: {:>8.3f} {:>8.3f} {:>8.3f}".format(
+            self.speed_rx['bytes'], self.speed_tx['bytes'], self.last_update)
+
+    def __repr__(self):
+        return "LinkStats({}, {}, {})".format(self.speed_rx, self.speed_tx, self.last_update)
+
+    def update(self, cumulative_rx, cumulative_tx):
+        now = time.time()
+        self.speed_rx = {p: (cumulative_rx[p] - self.cumulative_rx[p])/(now - self.last_update) for p in cumulative_rx}
+        self.cumulative_rx.update(cumulative_rx)
+        self.speed_tx = {p: (cumulative_tx[p] - self.cumulative_tx[p])/(now - self.last_update) for p in cumulative_tx}
+        self.cumulative_tx.update(cumulative_tx)
+        self.last_update = now
+
 
 class StateLearner(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -39,6 +60,7 @@ class StateLearner(app_manager.RyuApp):
         self.monitor_thread = hub.spawn(self._monitor)
         self.topology_thread = hub.spawn(self._topology_monitor)
         self.printer_thread = hub.spawn(self._printer)
+        self.changed_flows = True
 
         self.mac_to_port = {}
         self.datapaths = {}
@@ -52,7 +74,9 @@ class StateLearner(app_manager.RyuApp):
     def _printer(self):
         pp = pprint.PrettyPrinter()
         while True:
-            pp.pprint(self.flows)
+            if self.changed_flows:
+                self.changed_flows = False
+                pp.pprint(self.flows)
             hub.sleep(10)
 
     def _monitor(self):
@@ -66,7 +90,7 @@ class StateLearner(app_manager.RyuApp):
             links = get_all_link(self)
             for l in links:
                 self.topology[l.src.dpid][l.src.port_no][2] = l.dst
-            hub.sleep(30)
+            hub.sleep(20)
 
     def _request_port_stats(self, datapath):
         ofproto = datapath.ofproto
@@ -78,11 +102,13 @@ class StateLearner(app_manager.RyuApp):
     # App handlers
 
     @set_ev_cls(ofp_event.EventOFPFlowRemoved, MAIN_DISPATCHER)
-    def flow_removed_handler(self, ev):
+    def _flow_removed_handler(self, ev):
         msg = ev.msg
         src = msg.match.get('eth_src')
         dst = msg.match.get('eth_dst')
         dpid = msg.datapath.id
+        self.changed_flows = True
+        self.logger.info("Flow removed in %d from %s to %s", dpid, src, dst)
         if src and dst:
             if src not in self.flows:
                 self.flows[src] = {}
@@ -95,14 +121,20 @@ class StateLearner(app_manager.RyuApp):
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def _port_stats_reply_handler(self, ev):
         body = ev.msg.body
-        latency = time.time() - self.last_request[ev.msg.datapath.id]
-        self.controller_link_latency[ev.msg.datapath.id] = latency
+        dpid = ev.msg.datapath.id
+        latency = time.time() - self.last_request[dpid]
+        self.controller_link_latency[dpid] = latency
+        for port in body:
+            tx = {p[3:] : getattr(port, p) for p in dir(port) if p.startswith('tx')}
+            rx = {p[3:] : getattr(port, p) for p in dir(port) if p.startswith('rx')}
+            port_stats = self.topology[dpid][port.port_no][1]
+            port_stats.update(rx,tx)
 
     @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
     def _port_desc_stats_reply_handler(self, ev):
         body = ev.msg.body
         dpid = ev.msg.datapath.id
-        self.logger.info("Port description of dp %d", dpid)
+        self.logger.info("Received ports descriptions from dp %d", dpid)
         for p in body:
             self.topology[dpid][p.port_no][1].bw = p.curr_speed
 
@@ -159,7 +191,7 @@ class StateLearner(app_manager.RyuApp):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
