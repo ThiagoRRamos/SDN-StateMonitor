@@ -13,6 +13,9 @@ from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib import hub
 from ryu.topology.api import get_all_link
+from ryu.lib import addrconv
+
+from latency_monitor import LatencyMonitorPacket
 
 MAX32BITS = 1 << 31
 
@@ -60,6 +63,7 @@ class StateLearner(app_manager.RyuApp):
         self.monitor_thread = hub.spawn(self._monitor)
         self.topology_thread = hub.spawn(self._topology_monitor)
         self.printer_thread = hub.spawn(self._printer)
+        self._latency_thread = hub.spawn(self._latency_monitor)
         self.changed_flows = True
 
         self.mac_to_port = {}
@@ -71,12 +75,34 @@ class StateLearner(app_manager.RyuApp):
 
     # Methods called by the hubs
 
+    def send_latency_message(self, dp, port):
+        a = time.time()
+        pkt = packet.Packet()
+        pkt.add_protocol(LatencyMonitorPacket(dp.id, a))
+        pkt.serialize()
+        actions = [dp.ofproto_parser.OFPActionOutput(port)]
+        out = dp.ofproto_parser.OFPPacketOut(
+            datapath=dp, in_port=dp.ofproto.OFPP_CONTROLLER,
+            buffer_id=dp.ofproto.OFP_NO_BUFFER, actions=actions,
+            data=pkt.data)
+        dp.send_msg(out)
+
+    def _latency_monitor(self):
+        while True:
+            for dp in self.datapaths:
+                for port in self.topology[dp]:
+                    self.send_latency_message(self.datapaths[dp], port)
+            hub.sleep(5)
+
     def _printer(self):
         pp = pprint.PrettyPrinter()
         while True:
             if self.changed_flows:
                 self.changed_flows = False
                 pp.pprint(self.flows)
+            #for dp in self.topology:
+            #    for port in self.topology[dp]:
+            #        print dp, port, self.topology[dp][port][1]
             hub.sleep(10)
 
     def _monitor(self):
@@ -184,7 +210,10 @@ class StateLearner(app_manager.RyuApp):
 
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
-
+        if eth.ethertype == 0x0888:
+            a = LatencyMonitorPacket.parser(msg.data)
+            print "Latencia entre {} e {}".format(a.dp, datapath.id), time.time() - a.time, time.time(), a.time
+            return
         dst = eth.dst
         src = eth.src
 

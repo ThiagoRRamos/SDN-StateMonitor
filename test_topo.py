@@ -29,17 +29,17 @@ class ITATopo(Topo):
 
     	self.addLink(
             switch_left, switch_center,
-            bw=10, delay='5ms', loss=1, max_queue_size=1000, use_htb=True)
+            bw=10, delay='500ms', loss=1, max_queue_size=1000, use_htb=True)
     	self.addLink(
             switch_center, switch_right,
-            bw=10, delay='5ms', loss=1, max_queue_size=1000, use_htb=True)
+            bw=10, delay='1000ms', loss=1, max_queue_size=1000, use_htb=True)
         for n, sw in enumerate(switches):
             self.addLink(
                 sw, hs[2 * n],
-                bw=10, delay='5ms', loss=2, max_queue_size=1000, use_htb=True)
+                bw=10, delay='0ms', loss=2, max_queue_size=1000, use_htb=True)
             self.addLink(
                 sw, hs[2 * n + 1],
-                bw=10, delay='5ms', loss=2, max_queue_size=1000, use_htb=True)
+                bw=10, delay='0ms', loss=2, max_queue_size=1000, use_htb=True)
 
 def topoTest():
     "Create network and run simple performance test"
