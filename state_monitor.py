@@ -10,9 +10,8 @@ from ryu.controller.handler import DEAD_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet
+from ryu.lib.packet import ethernet, tcp, udp, lldp
 from ryu.lib import hub
-from ryu.topology.api import get_all_link
 from ryu.lib import addrconv
 
 from latency_monitor import LatencyMonitorPacket
@@ -40,8 +39,8 @@ class LinkStats(object):
         self.last_update = time.time()
 
     def __str__(self):
-        return "Stats: {:>8.3f} {:>8.3f} {:>8.3f}".format(
-            self.speed_rx['bytes'], self.speed_tx['bytes'], self.last_update)
+        return "Stats: {:>8.2f} {:>8.2f} {:>8.2f} - {:>5.2f}".format(
+            self.speed_rx['bytes'], self.speed_tx['bytes'], self.latency, self.last_update)
 
     def __repr__(self):
         return "LinkStats({}, {}, {})".format(self.speed_rx, self.speed_tx, self.last_update)
@@ -61,7 +60,6 @@ class StateLearner(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(StateLearner, self).__init__(*args, **kwargs)
         self.monitor_thread = hub.spawn(self._monitor)
-        self.topology_thread = hub.spawn(self._topology_monitor)
         self.printer_thread = hub.spawn(self._printer)
         self._latency_thread = hub.spawn(self._latency_monitor)
         self.changed_flows = True
@@ -78,7 +76,8 @@ class StateLearner(app_manager.RyuApp):
     def send_latency_message(self, dp, port):
         a = time.time()
         pkt = packet.Packet()
-        pkt.add_protocol(LatencyMonitorPacket(dp.id, a))
+        lmp = LatencyMonitorPacket(dp.id, a, port)
+        pkt.add_protocol(lmp)
         pkt.serialize()
         actions = [dp.ofproto_parser.OFPActionOutput(port)]
         out = dp.ofproto_parser.OFPPacketOut(
@@ -92,7 +91,7 @@ class StateLearner(app_manager.RyuApp):
             for dp in self.datapaths:
                 for port in self.topology[dp]:
                     self.send_latency_message(self.datapaths[dp], port)
-            hub.sleep(5)
+            hub.sleep(15)
 
     def _printer(self):
         pp = pprint.PrettyPrinter()
@@ -100,9 +99,9 @@ class StateLearner(app_manager.RyuApp):
             if self.changed_flows:
                 self.changed_flows = False
                 pp.pprint(self.flows)
-            #for dp in self.topology:
-            #    for port in self.topology[dp]:
-            #        print dp, port, self.topology[dp][port][1]
+            for dp in self.topology:
+                for port in self.topology[dp]:
+                    print "{:>3d} {:>11d}".format(dp, port), self.topology[dp][port][1]
             hub.sleep(10)
 
     def _monitor(self):
@@ -110,13 +109,6 @@ class StateLearner(app_manager.RyuApp):
             for dp in self.datapaths.values():
                 self._request_port_stats(dp)
             hub.sleep(15)
-    
-    def _topology_monitor(self):
-        while True:
-            links = get_all_link(self)
-            for l in links:
-                self.topology[l.src.dpid][l.src.port_no][2] = l.dst
-            hub.sleep(20)
 
     def _request_port_stats(self, datapath):
         ofproto = datapath.ofproto
@@ -148,7 +140,7 @@ class StateLearner(app_manager.RyuApp):
     def _port_stats_reply_handler(self, ev):
         body = ev.msg.body
         dpid = ev.msg.datapath.id
-        latency = time.time() - self.last_request[dpid]
+        latency = (time.time() - self.last_request[dpid])/2
         self.controller_link_latency[dpid] = latency
         for port in body:
             tx = {p[3:] : getattr(port, p) for p in dir(port) if p.startswith('tx')}
@@ -175,7 +167,7 @@ class StateLearner(app_manager.RyuApp):
                 self.datapaths[datapath.id] = datapath
                 self.topology[datapath.id] = {}
                 for port in datapath.ports:
-                    self.topology[datapath.id][port] = [datapath.ports[port], LinkStats(), None]
+                    self.topology[datapath.id][port] = [datapath.ports[port], LinkStats(), 0, 0]
                 req = parser.OFPPortDescStatsRequest(datapath, 0)
                 datapath.send_msg(req)
         elif ev.state == DEAD_DISPATCHER:
@@ -201,6 +193,19 @@ class StateLearner(app_manager.RyuApp):
             flags=ofproto_v1_3.OFPFF_SEND_FLOW_REM, match=match, instructions=inst)
         datapath.send_msg(mod)
 
+    def process_latency_packet(self, msg):
+        a = LatencyMonitorPacket.parser(msg.data)
+        dpid = msg.datapath.id
+        in_port = msg.match['in_port']
+        latency = time.time() - a.time
+        if dpid in self.controller_link_latency:
+            latency -= self.controller_link_latency[dpid]
+        if a.dp in self.controller_link_latency:
+            latency -= self.controller_link_latency[a.dp]
+        self.topology[a.dp][a.port][1].latency = latency
+        self.topology[a.dp][a.port][2] = dpid
+        self.topology[a.dp][a.port][3] = in_port
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         msg = ev.msg
@@ -211,8 +216,7 @@ class StateLearner(app_manager.RyuApp):
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
         if eth.ethertype == 0x0888:
-            a = LatencyMonitorPacket.parser(msg.data)
-            print "Latencia entre {} e {}".format(a.dp, datapath.id), time.time() - a.time, time.time(), a.time
+            self.process_latency_packet(msg)
             return
         dst = eth.dst
         src = eth.src
