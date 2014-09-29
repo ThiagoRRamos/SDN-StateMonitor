@@ -1,7 +1,8 @@
-from ryu.lib.packet import packet_base
 import struct
-from ryu.lib import addrconv
 import time
+
+from ryu.lib import addrconv
+from ryu.lib.packet import packet_base
 
 class LatencyMonitorPacket(packet_base.PacketBase):
 
