@@ -2,6 +2,8 @@ import logging
 import struct
 import pprint
 import time
+import heapq
+from collections import deque
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event
@@ -15,6 +17,7 @@ from ryu.lib import hub
 from ryu.lib import addrconv
 
 from latency_monitor import LatencyMonitorPacket
+import decision_maker as dm
 
 MAX32BITS = 1 << 31
 
@@ -44,7 +47,7 @@ class LinkStats(object):
             self.speed_rx['bytes'], self.speed_tx['bytes'], self.latency, self.jitter)
 
     def __repr__(self):
-        return "LinkStats({}, {}, {})".format(self.speed_rx, self.speed_tx, self.last_update)
+        return "LinkStats({}, {}, {})".format(self.latency, self.jitter, self.speed_tx['bytes'])
 
     def update(self, cumulative_rx, cumulative_tx):
         now = time.time()
@@ -64,7 +67,7 @@ class StateLearner(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(StateLearner, self).__init__(*args, **kwargs)
         self.monitor_thread = hub.spawn(self._monitor)
-        self.printer_thread = hub.spawn(self._printer)
+        #self.printer_thread = hub.spawn(self._printer)
         self.latency_thread = hub.spawn(self._latency_monitor)
         self.changed_flows = True
 
@@ -109,18 +112,19 @@ class StateLearner(app_manager.RyuApp):
             for dp in self.datapaths:
                 for port in self.ports_stats[dp]:
                     self.send_latency_message(self.datapaths[dp], port)
-            hub.sleep(15)
+            hub.sleep(5)
 
     def _printer(self):
         pp = pprint.PrettyPrinter()
         while True:
             print ""
-            if self.changed_flows:
-                self.changed_flows = False
-                pp.pprint(self.flows)
-            for dp in self.ports_stats:
-                for port in self.ports_stats[dp]:
-                    print "{:>3d} {:>11d}".format(dp, port), self.ports_stats[dp][port][1]
+            print self.closest_dpid
+            # if self.changed_flows:
+            #     self.changed_flows = False
+            #     pp.pprint(self.flows)
+            # for dp in self.ports_stats:
+            #     for port in self.ports_stats[dp]:
+            #         print "{:>3d} {:>11d}".format(dp, port), self.ports_stats[dp][port][1]
             hub.sleep(10)
 
     def _monitor(self):
@@ -181,7 +185,7 @@ class StateLearner(app_manager.RyuApp):
                 self.ports_stats[datapath.id] = {}
                 self.topology[datapath.id] = {}
                 for port in datapath.ports:
-                    self.ports_stats[datapath.id][port] = [datapath.ports[port], LinkStats(), 0, 0]
+                    self.ports_stats[datapath.id][port] = [datapath.ports[port], LinkStats(), None, None]
                 req = parser.OFPPortDescStatsRequest(datapath, 0)
                 datapath.send_msg(req)
         elif ev.state == DEAD_DISPATCHER:
@@ -192,25 +196,41 @@ class StateLearner(app_manager.RyuApp):
                 del self.topology[datapath.id]  
                 del self.ports_stats[datapath.id]
 
-    def decide_best_path(self, src_mac, dst_mac):
-        src_dpid = self.closest_dpid.get(src_mac)
-        dst_dpid = self.closest_dpid.get(dst_mac)
-        if not src_dpid or not dst_dpid:
-            return None
-        return None
+    def neighbors(self, a):
+        neigh_map = self.ports_stats[a]
+        for port in neigh_map:
+            n = neigh_map[port]
+            if n[2]:
+                yield n, n[2]
 
-    def install_flows_advance(self, match, datapath_path):
-        for d1, d2 in zip(datapath_path, datapath_path[1:]):
-            port = 3
-            actions = [datapath.ofproto_parser.OFPActionOutput(port)]
-            inst = [datapath.ofproto_parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-            mod = datapath.ofproto_parser.OFPFlowMod(
-                datapath=datapath, cookie=0, cookie_mask=0, table_id=0,
-                command=ofproto.OFPFC_ADD, idle_timeout=10, hard_timeout=30,
-                priority=0, buffer_id=ofproto.OFP_NO_BUFFER,
-                out_port=ofproto.OFPP_ANY,
-                out_group=ofproto.OFPG_ANY,
-                flags=ofproto_v1_3.OFPFF_SEND_FLOW_REM, match=match, instructions=inst)
+
+    def path(self, parents, dst, src):
+        a = []
+        el = dst
+        while el != src:
+            a.append(el)
+            el = parents[el]
+        a.append(src)
+        return list(reversed(a))
+
+    def decide_best_path(self, src_dpid, dst_mac, func):
+        dst_dpid = self.closest_dpid.get(dst_mac)
+        if not dst_dpid or src_dpid == dst_dpid:
+            return None
+        values = {src_dpid: 0.0}
+        parent = {src_dpid: None}
+        frontier = [(0, src_dpid)]
+        while frontier:
+            val, el = heapq.heappop(frontier)
+            if dst_dpid in values and values[dst_dpid] <= val:
+                return self.path(parent, dst_dpid, src_dpid)
+            for link, neigh in self.neighbors(el):
+                new_val = val + func(link)
+                if neigh not in values or values[neigh] > new_val:
+                    heapq.heappush(frontier, (new_val, neigh))
+                    values[neigh] = new_val
+                    parent[neigh] = el
+        return None
 
     def add_flow(self, datapath, src, dst, actions):
         ofproto = datapath.ofproto
@@ -228,6 +248,7 @@ class StateLearner(app_manager.RyuApp):
             out_group=ofproto.OFPG_ANY,
             flags=ofproto_v1_3.OFPFF_SEND_FLOW_REM, match=match, instructions=inst)
         datapath.send_msg(mod)
+        print "Adding flow on %d: " % datapath.id, src, dst, actions[0]
 
     def process_latency_packet(self, msg):
         pkt_in = LatencyMonitorPacket.parser(msg.data)
@@ -260,36 +281,33 @@ class StateLearner(app_manager.RyuApp):
         dst = eth.dst
         src = eth.src
 
-        path = self.decide_best_path(src, dst)
-        if path:
-            self.install_flows_advance([], path)
-            return
+        if src not in self.closest_dpid:
+            self.closest_dpid[src] = datapath.id
 
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
-
-        #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
-
-        # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
-        now = time.time()
-        if dst in self.mac_to_port[dpid]:
+        print "Packet in on %d to %s" % (dpid, dst)
+        path = self.decide_best_path(datapath.id, dst, dm.atency)
+        if path:
+            print "Decided via path: ", path
+            out_port = self.topology[dpid][path[1]]
+        elif dst in self.mac_to_port[dpid]:
+            print "Decided via learning"
             out_port = self.mac_to_port[dpid][dst]
         else:
+            print "Flooding!"
+            now = time.time()
             if msg.data in self.flooded[dpid] and now - self.flooded[dpid][msg.data] <= 10:
                 return
             self.flooded[dpid][msg.data] = now
             out_port = ofproto.OFPP_FLOOD
 
-        if src not in self.closest_dpid:
-            self.closest_dpid[src] = in_port
-
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
 
-        # install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
             self.add_flow(datapath, src, dst, actions)
-
+        
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
             actions=actions)
