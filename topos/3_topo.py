@@ -26,7 +26,7 @@ class ITATopo(Topo):
         switches = [s1, s2, s3]
         hs = [h1, h2, h3]
 
-        self.addLink(s1, s2, bw=0.5, delay='500ms', loss=1, jitter='40ms', use_htb=True)
+        self.addLink(s1, s2, bw=0.5, delay='500ms', loss=1, jitter='100ms', use_htb=True)
         self.addLink(s1, s3, bw=0.5, delay='500ms', loss=1, jitter='0ms', use_htb=True)
         self.addLink(s2, s3, bw=0.5, delay='500ms', loss=1, jitter='0ms', use_htb=True)
 

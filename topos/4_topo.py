@@ -20,20 +20,18 @@ class ITATopo(Topo):
 
     	h1 = self.addHost('h1', ip='161.24.0.5/24')
         h2 = self.addHost('h2', ip='161.24.0.6/24')
-        h3 = self.addHost('h3', ip='161.24.0.7/24')
-        h4 = self.addHost('h4', ip='161.24.0.8/24')
 
         switches = [s1, s2, s3, s4]
-        hs = [h1, h2, h3, h4]
 
-        self.addLink(s1, s2, bw=10, delay='500ms', loss=1, use_htb=True)
-        self.addLink(s1, s3, bw=10, delay='500ms', loss=1, use_htb=True)
-        self.addLink(s1, s4, bw=10, delay='500ms', loss=1, use_htb=True)
-        self.addLink(s2, s4, bw=10, delay='500ms', loss=1, use_htb=True)
-    	self.addLink(s3, s4, bw=10, delay='500ms', loss=1, use_htb=True)
+        self.addLink(s1, s2, bw=10, delay='200ms', loss=3, jitter='10ms', use_htb=True)
+        self.addLink(s1, s3, bw=10, delay='100ms', loss=20,jitter='10ms', use_htb=True)
+        self.addLink(s1, s4, bw=10, delay='600ms', loss=20, jitter='10ms', use_htb=True)
+        self.addLink(s2, s3, bw=10, delay='200ms', loss=3, jitter='10ms', use_htb=True)
+        self.addLink(s2, s4, bw=10, delay='200ms', loss=20, jitter='10ms', use_htb=True)
+    	self.addLink(s3, s4, bw=10, delay='500ms', loss=3, jitter='10ms', use_htb=True)
 
-        for h, s in zip(hs, switches):
-            self.addLink(h, s, bw=10, delay='0ms', loss=2, use_htb=True)
+        self.addLink(h1, s1, bw=10, delay='0ms', loss=0, use_htb=True)
+        self.addLink(h2, s4, bw=10, delay='0ms', loss=0, use_htb=True)
 
 def topoTest():
     "Create network and run simple performance test"

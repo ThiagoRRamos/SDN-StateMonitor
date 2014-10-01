@@ -1,5 +1,6 @@
 import re
 import time
+import itertools
 
 loss_r = r'(\d+)% packet loss,'
 
@@ -12,6 +13,9 @@ def convert_speed(stringg):
     raise Error
 
 def test_performance(net, h1, h2):
+    for a, b in itertools.permutations(net.hosts, 2):
+        a.cmd('ping -c1 %s' % b.IP())
+    time.sleep(3)
     lines = h1.cmd('ping -c20 %s' % h2.IP()).splitlines()
     loss_line = lines[-2]
     ploss = float(re.search(loss_r, loss_line).group(1))/100.0

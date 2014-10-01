@@ -5,6 +5,7 @@ import time
 import heapq
 from collections import deque
 
+from ryu.app.wsgi import WSGIApplication
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER
@@ -16,6 +17,8 @@ from ryu.lib.packet import ethernet, tcp, udp, lldp
 from ryu.lib import hub
 from ryu.lib import addrconv
 
+
+from controller import StateTopologyController
 from latency_monitor import LatencyMonitorPacket
 import decision_maker as dm
 
@@ -64,10 +67,18 @@ class LinkStats(object):
 class StateLearner(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
+    _CONTEXTS = {
+        'wsgi': WSGIApplication
+    }
+
     def __init__(self, *args, **kwargs):
         super(StateLearner, self).__init__(*args, **kwargs)
+
+        wsgi = kwargs['wsgi']
+        wsgi.register(StateTopologyController, {'topology_api_app': self})
+
         self.monitor_thread = hub.spawn(self._monitor)
-        #self.printer_thread = hub.spawn(self._printer)
+        self.printer_thread = hub.spawn(self._printer)
         self.latency_thread = hub.spawn(self._latency_monitor)
         self.changed_flows = True
 
@@ -118,13 +129,13 @@ class StateLearner(app_manager.RyuApp):
         pp = pprint.PrettyPrinter()
         while True:
             print ""
-            print self.closest_dpid
-            # if self.changed_flows:
-            #     self.changed_flows = False
-            #     pp.pprint(self.flows)
-            # for dp in self.ports_stats:
-            #     for port in self.ports_stats[dp]:
-            #         print "{:>3d} {:>11d}".format(dp, port), self.ports_stats[dp][port][1]
+            if self.changed_flows:
+                self.changed_flows = False
+                pp.pprint(self.flows)
+            for dp in self.ports_stats:
+                for port in self.ports_stats[dp]:
+                    if self.ports_stats[dp][port][2]:
+                        print "{:>3d} {:>11d}".format(dp, self.ports_stats[dp][port][2]), self.ports_stats[dp][port][1]
             hub.sleep(10)
 
     def _monitor(self):
@@ -225,7 +236,7 @@ class StateLearner(app_manager.RyuApp):
             if dst_dpid in values and values[dst_dpid] <= val:
                 return self.path(parent, dst_dpid, src_dpid)
             for link, neigh in self.neighbors(el):
-                new_val = val + func(link)
+                new_val = val + func(self.ports_stats, link)
                 if neigh not in values or values[neigh] > new_val:
                     heapq.heappush(frontier, (new_val, neigh))
                     values[neigh] = new_val
@@ -282,13 +293,15 @@ class StateLearner(app_manager.RyuApp):
         src = eth.src
 
         if src not in self.closest_dpid:
+            print "%s closest to %d" % (src, datapath.id)
             self.closest_dpid[src] = datapath.id
 
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
         self.mac_to_port[dpid][src] = in_port
         print "Packet in on %d to %s" % (dpid, dst)
-        path = self.decide_best_path(datapath.id, dst, dm.atency)
+        #path = self.decide_best_path(datapath.id, dst, dm.jitter)
+        path = None
         if path:
             print "Decided via path: ", path
             out_port = self.topology[dpid][path[1]]
