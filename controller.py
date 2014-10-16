@@ -16,6 +16,7 @@
 import json
 from webob import Response
 
+from html import HTML
 from ryu.app.wsgi import ControllerBase, WSGIApplication, route
 from ryu.base import app_manager
 from ryu.lib import dpid as dpid_lib
@@ -26,18 +27,56 @@ class StateTopologyController(ControllerBase):
         super(StateTopologyController, self).__init__(req, link, data, **config)
         self.app = data['topology_api_app']
 
-    @route('topology', '/topology', methods=['GET'])
-    def list_switches(self, req, **kwargs):
+    @route('topology', '/json/topology', methods=['GET'])
+    def json_switches(self, req, **kwargs):
         body = json.dumps(self.app.topology)
         return Response(content_type='application/json', body=body)
 
-    @route('flows', '/flows', methods=['GET'])
-    def list_flows(self, req, **kwargs):
+    @route('flows', '/json/flows', methods=['GET'])
+    def json_flows(self, req, **kwargs):
         body = json.dumps(self.app.flows)
         return Response(content_type='application/json', body=body)
 
-    @route('port_stats', '/ports', methods=['GET'])
-    def list_flows(self, req, **kwargs):
-        body = json.dumps(self.app.flows)
+    @route('json_port_stats', '/json/ports', methods=['GET'])
+    def json_post_stats(self, req, **kwargs):
+        body = json.dumps(self.app.ports_stats)
         return Response(content_type='application/json', body=body)
-        
+
+    @route('port_stats', '/port_stats', methods=['GET'])
+    def port_stats(self, req, **kwargs):
+        h = HTML()
+        b = h.body
+        table = b.table(border='1')
+        headers = {'Latency': lambda x: x.latency,
+            'Jitter': lambda x: x.jitter,
+            "B/s sent": lambda x: x.speed_tx['bytes'],
+            "Packets sent": lambda x: x.cumulative_tx['packets']}
+        headers_order = ['Latency', 'Jitter', "B/s sent", "Packets sent"]
+        trh = table.tr
+        trh.th("Origin")
+        trh.th("Destiny")
+        for header in headers_order:
+            trh.th(header)
+        for dpid, port_data in self.app.ports_stats.items():
+            for port, data in port_data.items():
+                if data[2]:
+                    tr = table.tr
+                    tr.td(str(dpid))
+                    tr.td(str(data[2]))
+                    for header in headers_order:
+                        func = headers[header]
+                        tr.td("{:.3f}".format(func(data[1])))
+        return Response(body=str(h))
+       
+    @route('paths', '/paths', methods=['GET'])    
+    def decided_paths(reslf, req, **kwargs):
+        h = HTML()
+        b = h.body
+        table = b.table(border='1')
+        trh = table.tr
+        trh.th("Datapath Origin")
+        trh.th("Mac Destiny")
+        for dp in datapaths:
+            for mac in self.app.closest_dpid:
+                pass
+        return Response(body=str(h))

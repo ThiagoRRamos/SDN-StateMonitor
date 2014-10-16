@@ -16,6 +16,7 @@ from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet, tcp, udp, lldp
 from ryu.lib import hub
 from ryu.lib import addrconv
+from ryu.lib import stplib
 
 
 from controller import StateTopologyController
@@ -68,7 +69,7 @@ class StateLearner(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     _CONTEXTS = {
-        'wsgi': WSGIApplication
+        'wsgi': WSGIApplication,
     }
 
     def __init__(self, *args, **kwargs):
@@ -78,9 +79,7 @@ class StateLearner(app_manager.RyuApp):
         wsgi.register(StateTopologyController, {'topology_api_app': self})
 
         self.monitor_thread = hub.spawn(self._monitor)
-        self.printer_thread = hub.spawn(self._printer)
         self.latency_thread = hub.spawn(self._latency_monitor)
-        self.changed_flows = True
 
         self.mac_to_port = {} #Standard Learning Switch structure, to tell which port is related to that mac
         self.closest_dpid = {} #Which dp is the first to receive messages from that mac
@@ -93,7 +92,8 @@ class StateLearner(app_manager.RyuApp):
         self.flows = {} #Stats aggregated by type of flow
         self.ports_stats = {} #Stats aggregated by port
 
-        self.flooded = {}
+        self.updated_st = False
+        self.st_ignored_ports = {}
 
     # Hub helpers
 
@@ -118,25 +118,24 @@ class StateLearner(app_manager.RyuApp):
 
     # Methods called by the hubs
 
-    def _latency_monitor(self):
-        while True:
+    def send_latency_messages(self, dp=None):
+        if dp is None:
             for dp in self.datapaths:
                 for port in self.ports_stats[dp]:
                     self.send_latency_message(self.datapaths[dp], port)
-            hub.sleep(5)
+        else:
+            for port in self.ports_stats[dp]:
+                self.send_latency_message(self.datapaths[dp], port)
 
-    def _printer(self):
-        pp = pprint.PrettyPrinter()
+    def _latency_monitor(self):
+        count = 0
         while True:
-            print ""
-            if self.changed_flows:
-                self.changed_flows = False
-                pp.pprint(self.flows)
-            for dp in self.ports_stats:
-                for port in self.ports_stats[dp]:
-                    if self.ports_stats[dp][port][2]:
-                        print "{:>3d} {:>11d}".format(dp, self.ports_stats[dp][port][2]), self.ports_stats[dp][port][1]
-            hub.sleep(10)
+            if count % 3 == 0:
+                self.send_latency_messages()
+            if not self.updated_st:
+                self.calculate_spanning_tree()
+            count += 1
+            hub.sleep(5)
 
     def _monitor(self):
         while True:
@@ -152,7 +151,6 @@ class StateLearner(app_manager.RyuApp):
         src = msg.match.get('eth_src')
         dst = msg.match.get('eth_dst')
         dpid = msg.datapath.id
-        self.changed_flows = True
         self.logger.info("Flow removed in %d from %s to %s", dpid, src, dst)
         if src and dst:
             if src not in self.flows:
@@ -183,6 +181,33 @@ class StateLearner(app_manager.RyuApp):
         for p in body:
             self.ports_stats[dpid][p.port_no][1].bw = p.curr_speed
 
+    def calculate_spanning_tree(self):
+        self.updated_st = True
+        if not self.datapaths:
+            self.st_ignored_ports = {}
+            return
+        result = {}
+        visited = set()
+        frontier = deque()
+        root = list(self.datapaths.keys())[0]
+        frontier.append((root, None))
+        deb = {}
+        while frontier:
+            els_in_frontier = [x[0] for x in frontier]
+            el, parent = frontier.popleft()
+            neighbors = self.topology[el]
+            for neigh in neighbors:
+                if neigh != parent:
+                    if neigh in visited or neigh in els_in_frontier:
+                        result.setdefault(el, set()).add(self.topology[el][neigh])
+                        deb.setdefault(el, set()).add(neigh)
+                        result.setdefault(neigh, set()).add(self.topology[neigh][el])
+                        deb.setdefault(neigh, set()).add(el)
+                    else:
+                        frontier.append((neigh, el))
+            visited.add(el)
+        self.st_ignored_ports = result
+
     @set_ev_cls(ofp_event.EventOFPStateChange, [MAIN_DISPATCHER, DEAD_DISPATCHER])
     def _state_change_handler(self, ev):
         datapath = ev.datapath
@@ -190,19 +215,19 @@ class StateLearner(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         if ev.state == MAIN_DISPATCHER:
             if not datapath.id in self.datapaths:
+                dpid = datapath.id
                 self.logger.debug('register datapath: %016x', datapath.id)
-                self.datapaths[datapath.id] = datapath
-                self.flooded[datapath.id] = {}
-                self.ports_stats[datapath.id] = {}
-                self.topology[datapath.id] = {}
+                self.datapaths[dpid] = datapath
+                self.ports_stats[dpid] = {}
+                self.topology[dpid] = {}
                 for port in datapath.ports:
                     self.ports_stats[datapath.id][port] = [datapath.ports[port], LinkStats(), None, None]
                 req = parser.OFPPortDescStatsRequest(datapath, 0)
                 datapath.send_msg(req)
+                self.send_latency_messages(dpid)
         elif ev.state == DEAD_DISPATCHER:
             if datapath.id in self.datapaths:
                 self.logger.debug('unregister datapath: %016x', datapath.id)
-                del self.flooded[datapath.id]
                 del self.datapaths[datapath.id]
                 del self.topology[datapath.id]  
                 del self.ports_stats[datapath.id]
@@ -236,7 +261,7 @@ class StateLearner(app_manager.RyuApp):
             if dst_dpid in values and values[dst_dpid] <= val:
                 return self.path(parent, dst_dpid, src_dpid)
             for link, neigh in self.neighbors(el):
-                new_val = val + func(self.ports_stats, link)
+                new_val = val + func(val, self.ports_stats, link)
                 if neigh not in values or values[neigh] > new_val:
                     heapq.heappush(frontier, (new_val, neigh))
                     values[neigh] = new_val
@@ -276,6 +301,14 @@ class StateLearner(app_manager.RyuApp):
         if pkt_in.dp not in self.topology[dpid]:
             self.topology[dpid][pkt_in.dp] = in_port
             self.topology[pkt_in.dp][dpid] = pkt_in.port
+            self.updated_st = False
+
+    def flood_ports(self, ofproto, dpid, in_port):
+        ports = self.datapaths[dpid].ports.keys()
+        ignored = self.st_ignored_ports.setdefault(dpid, set())
+        print "Total would be", ports
+        print "Sending", [x for x in ports if x not in ignored]
+        return [x for x in ports if x not in ignored]
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -299,26 +332,24 @@ class StateLearner(app_manager.RyuApp):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
         self.mac_to_port[dpid][src] = in_port
-        print "Packet in on %d to %s" % (dpid, dst)
-        #path = self.decide_best_path(datapath.id, dst, dm.jitter)
-        path = None
+        should_add_flow = False
+        print "Packet in on %d to %s (%x)" % (dpid, dst, eth.ethertype)
+        path = self.decide_best_path(datapath.id, dst, dm.sent_packets)
         if path:
+            should_add_flow = True
             print "Decided via path: ", path
-            out_port = self.topology[dpid][path[1]]
+            ports = [self.topology[dpid][path[1]]]
         elif dst in self.mac_to_port[dpid]:
+            should_add_flow = True
             print "Decided via learning"
-            out_port = self.mac_to_port[dpid][dst]
+            ports = [self.mac_to_port[dpid][dst]]
         else:
             print "Flooding!"
             now = time.time()
-            if msg.data in self.flooded[dpid] and now - self.flooded[dpid][msg.data] <= 10:
-                return
-            self.flooded[dpid][msg.data] = now
-            out_port = ofproto.OFPP_FLOOD
+            ports = self.flood_ports(ofproto, dpid, in_port)
+        actions = [datapath.ofproto_parser.OFPActionOutput(out_port) for out_port in ports]
 
-        actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-
-        if out_port != ofproto.OFPP_FLOOD:
+        if should_add_flow:
             self.add_flow(datapath, src, dst, actions)
         
         out = datapath.ofproto_parser.OFPPacketOut(

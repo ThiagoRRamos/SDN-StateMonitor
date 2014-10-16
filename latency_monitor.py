@@ -6,7 +6,7 @@ from ryu.lib.packet import packet_base
 
 class LatencyMonitorPacket(packet_base.PacketBase):
 
-	ETH_TYPE = 0x0888
+	ETH_TYPE = 0x07c3
 	PKT_STRUCT = '!6s6sHIId'
 
 	def __init__(self, dp=0, t=0, port=0):
