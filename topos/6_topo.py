@@ -46,13 +46,17 @@ def topoTest():
     for i in xrange(10):
         delay = 100*i
         topo = ITATopo(delay, 0)
-        print "Starting", i
+        #print "Starting", i
         net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink, controller=RemoteController)
         net.start()
         time.sleep(12)
         b = requests.get("http://localhost:8080/json/latencies")
-        print b.json()
-        print "Finishing", i
+        j = b.json()
+        a = []
+        for dpid in j:
+            a += [j[dpid][neigh] for neigh in j[dpid]]
+        print a
+        #print "Finishing", i
         net.stop()
 
 if __name__ == '__main__':

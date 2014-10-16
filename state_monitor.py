@@ -290,10 +290,10 @@ class StateLearner(app_manager.RyuApp):
         dpid = msg.datapath.id
         in_port = msg.match['in_port']
         latency = time.time() - pkt_in.time
-        # if dpid in self.controller_link_latency:
-        #     latency -= self.controller_link_latency[dpid]
-        # if pkt_in.dp in self.controller_link_latency:
-        #     latency -= self.controller_link_latency[pkt_in.dp]
+        if dpid in self.controller_link_latency:
+            latency -= self.controller_link_latency[dpid]
+        if pkt_in.dp in self.controller_link_latency:
+            latency -= self.controller_link_latency[pkt_in.dp]
         self.ports_stats[pkt_in.dp][pkt_in.port][1].add_latency(latency)
         self.ports_stats[pkt_in.dp][pkt_in.port][2] = dpid
         self.ports_stats[pkt_in.dp][pkt_in.port][3] = in_port
