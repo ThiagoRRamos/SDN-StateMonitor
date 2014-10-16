@@ -37,7 +37,19 @@ class StateTopologyController(ControllerBase):
         body = json.dumps(self.app.flows)
         return Response(content_type='application/json', body=body)
 
-    @route('json_port_stats', '/json/ports', methods=['GET'])
+    @route('latencies', '/json/latencies', methods=['GET'])
+    def json_latencies(self, req, **kwargs):
+        latencies = {}
+        for dpid in self.app.ports_stats:
+            latencies[dpid] = {}
+            for other_dpid in self.app.topology[dpid]:
+                port = self.app.topology[dpid][other_dpid]
+                print self.app.ports_stats[dpid][port]
+                latencies[dpid][other_dpid] = self.app.ports_stats[dpid][port][1].latency
+        body = json.dumps(latencies)
+        return Response(content_type='application/json', body=body)
+
+    @route('latencies', '/json/port_stats', methods=['GET'])
     def json_post_stats(self, req, **kwargs):
         body = json.dumps(self.app.ports_stats)
         return Response(content_type='application/json', body=body)
