@@ -128,13 +128,12 @@ class StateLearner(app_manager.RyuApp):
                 self.send_latency_message(self.datapaths[dp], port)
 
     def _latency_monitor(self):
-        count = 0
         while True:
             self.send_latency_messages()
+            hub.sleep(3)
             if not self.updated_st:
                 self.calculate_spanning_tree()
-            count += 1
-            hub.sleep(5)
+            hub.sleep(2)
 
     def _monitor(self):
         while True:
@@ -150,7 +149,7 @@ class StateLearner(app_manager.RyuApp):
         src = msg.match.get('eth_src')
         dst = msg.match.get('eth_dst')
         dpid = msg.datapath.id
-        self.logger.info("Flow removed in %d from %s to %s", dpid, src, dst)
+        self.logger.debug("Flow removed in %d from %s to %s", dpid, src, dst)
         if src and dst:
             if src not in self.flows:
                 self.flows[src] = {}
@@ -283,7 +282,7 @@ class StateLearner(app_manager.RyuApp):
             out_group=ofproto.OFPG_ANY,
             flags=ofproto_v1_3.OFPFF_SEND_FLOW_REM, match=match, instructions=inst)
         datapath.send_msg(mod)
-        print "Adding flow on %d: " % datapath.id, src, dst, actions[0]
+        self.logger.debug("Adding flow on %d: " % datapath.id, src, dst, actions[0])
 
     def process_latency_packet(self, msg):
         pkt_in = LatencyMonitorPacket.parser(msg.data)
@@ -291,15 +290,15 @@ class StateLearner(app_manager.RyuApp):
         in_port = msg.match['in_port']
         latency = time.time() - pkt_in.time
         if dpid in self.controller_link_latency:
-            latency -= self.controller_link_latency[dpid]
+           latency -= self.controller_link_latency[dpid]
         if pkt_in.dp in self.controller_link_latency:
-            latency -= self.controller_link_latency[pkt_in.dp]
+           latency -= self.controller_link_latency[pkt_in.dp]
         self.ports_stats[pkt_in.dp][pkt_in.port][1].add_latency(latency)
         self.ports_stats[pkt_in.dp][pkt_in.port][2] = dpid
         self.ports_stats[pkt_in.dp][pkt_in.port][3] = in_port
         if pkt_in.dp not in self.topology[dpid]:
-            self.topology[dpid][pkt_in.dp] = in_port
-            self.topology[pkt_in.dp][dpid] = pkt_in.port
+            self.topology.setdefault(dpid, {})[pkt_in.dp] = in_port
+            self.topology.setdefault(pkt_in.dp, {})[dpid] = pkt_in.port
             self.updated_st = False
 
     def flood_ports(self, ofproto, dpid, in_port):
@@ -323,26 +322,26 @@ class StateLearner(app_manager.RyuApp):
         src = eth.src
 
         if src not in self.closest_dpid:
-            print "%s closest to %d" % (src, datapath.id)
+            self.logger.debug("%s closest to %d" % (src, datapath.id))
             self.closest_dpid[src] = datapath.id
 
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
         self.mac_to_port[dpid][src] = in_port
         should_add_flow = False
-        print "Packet in on %d to %s (%x)" % (dpid, dst, eth.ethertype)
-        path = self.decide_best_path(datapath.id, dst, dm.sent_packets)
+        self.logger.info("Packet in on %d to %s (%x)" % (dpid, dst, eth.ethertype))
+        path = self.decide_best_path(datapath.id, dst, dm.latency)
         if path:
             should_add_flow = True
-            print "Decided via path: ", path
+            self.logger.debug("Decided via path: ", path)
             ports = [self.topology[dpid][path[1]]]
         elif dst in self.mac_to_port[dpid]:
             should_add_flow = True
-            print "Decided via learning"
+            self.logger.debug("Decided via learning")
             ports = [self.mac_to_port[dpid][dst]]
         else:
-            print "Flooding!"
-            now = time.time()
+            self.logger.debug("Flooding!")
+            should_add_flow = eth.ethertype == 0x806
             ports = self.flood_ports(ofproto, dpid, in_port)
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port) for out_port in ports]
 

@@ -44,8 +44,18 @@ class StateTopologyController(ControllerBase):
             latencies[dpid] = {}
             for other_dpid in self.app.topology[dpid]:
                 port = self.app.topology[dpid][other_dpid]
-                print self.app.ports_stats[dpid][port]
                 latencies[dpid][other_dpid] = self.app.ports_stats[dpid][port][1].latency
+        body = json.dumps(latencies)
+        return Response(content_type='application/json', body=body)
+
+    @route('jitters', '/json/jitters', methods=['GET'])
+    def json_jitters(self, req, **kwargs):
+        latencies = {}
+        for dpid in self.app.ports_stats:
+            latencies[dpid] = {}
+            for other_dpid in self.app.topology[dpid]:
+                port = self.app.topology[dpid][other_dpid]
+                latencies[dpid][other_dpid] = self.app.ports_stats[dpid][port][1].jitter
         body = json.dumps(latencies)
         return Response(content_type='application/json', body=body)
 
