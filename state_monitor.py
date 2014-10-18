@@ -341,7 +341,7 @@ class StateLearner(app_manager.RyuApp):
             ports = [self.mac_to_port[dpid][dst]]
         else:
             self.logger.debug("Flooding!")
-            should_add_flow = eth.ethertype == 0x806
+            should_add_flow = (eth.ethertype == 0x806 and dst == "ff:ff:ff:ff:ff:ff")
             ports = self.flood_ports(ofproto, dpid, in_port)
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port) for out_port in ports]
 
