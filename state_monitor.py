@@ -120,26 +120,36 @@ class StateLearner(app_manager.RyuApp):
 
     def send_latency_messages(self, dp=None):
         if dp is None:
-            for dp in self.datapaths:
-                for port in self.ports_stats[dp]:
-                    self.send_latency_message(self.datapaths[dp], port)
+            dps = list(self.datapaths.keys())
+            for dp in dps:
+                try:
+                    for port in self.ports_stats[dp]:
+                        self.send_latency_message(self.datapaths[dp], port)
+                except:
+                    pass
         else:
             for port in self.ports_stats[dp]:
                 self.send_latency_message(self.datapaths[dp], port)
 
     def _latency_monitor(self):
         while True:
-            self.send_latency_messages()
-            hub.sleep(3)
-            if not self.updated_st:
-                self.calculate_spanning_tree()
-            hub.sleep(2)
+            try:
+                self.send_latency_messages()
+                hub.sleep(3)
+                if not self.updated_st:
+                    self.calculate_spanning_tree()
+                hub.sleep(2)
+            except:
+                self.logger.info("Error in latency monitor")
 
     def _monitor(self):
         while True:
-            for dp in self.datapaths.values():
-                self._request_port_stats(dp)
-            hub.sleep(15)
+            try:
+                for dp in self.datapaths.values():
+                    self._request_port_stats(dp)
+                hub.sleep(15)
+            except:
+                self.logger.info("Error in monitor")
 
     # App handlers
 
@@ -214,7 +224,7 @@ class StateLearner(app_manager.RyuApp):
         if ev.state == MAIN_DISPATCHER:
             if not datapath.id in self.datapaths:
                 dpid = datapath.id
-                self.logger.debug('register datapath: %016x', datapath.id)
+                self.logger.info('register datapath: %016x', datapath.id)
                 self.datapaths[dpid] = datapath
                 self.ports_stats[dpid] = {}
                 self.topology[dpid] = {}
@@ -225,17 +235,33 @@ class StateLearner(app_manager.RyuApp):
                 self.send_latency_messages(dpid)
         elif ev.state == DEAD_DISPATCHER:
             if datapath.id in self.datapaths:
-                self.logger.debug('unregister datapath: %016x', datapath.id)
+                self.logger.info('unregister datapath: %016x', datapath.id)
                 del self.datapaths[datapath.id]
                 del self.topology[datapath.id]  
                 del self.ports_stats[datapath.id]
+                del self.mac_to_port[datapath.id]
+                closests = [k for k in self.closest_dpid if self.closest_dpid[k] == datapath.id]
+                for c in closests:
+                    del self.closest_dpid[c]
+                try:
+                    del self.last_request[datapath.id]
+                except KeyError:
+                    pass
+                try:
+                    del self.controller_link_latency[datapath.id]
+                except KeyError:
+                    pass
+        self.updated_st = False
 
     def neighbors(self, a):
-        neigh_map = self.ports_stats[a]
-        for port in neigh_map:
-            n = neigh_map[port]
-            if n[2]:
-                yield n, n[2]
+        try:
+            neigh_map = self.ports_stats[a]
+            for port in neigh_map:
+                n = neigh_map[port]
+                if n[2] and n[2] in self.topology[a]:
+                    yield n, n[2]
+        except:
+            pass
 
 
     def path(self, parents, dst, src):
@@ -293,9 +319,10 @@ class StateLearner(app_manager.RyuApp):
            latency -= self.controller_link_latency[dpid]
         if pkt_in.dp in self.controller_link_latency:
            latency -= self.controller_link_latency[pkt_in.dp]
-        self.ports_stats[pkt_in.dp][pkt_in.port][1].add_latency(latency)
-        self.ports_stats[pkt_in.dp][pkt_in.port][2] = dpid
-        self.ports_stats[pkt_in.dp][pkt_in.port][3] = in_port
+        if pkt_in.dp in self.ports_stats and pkt_in.port in self.ports_stats[pkt_in.dp]:
+            self.ports_stats[pkt_in.dp][pkt_in.port][1].add_latency(latency)
+            self.ports_stats[pkt_in.dp][pkt_in.port][2] = dpid
+            self.ports_stats[pkt_in.dp][pkt_in.port][3] = in_port
         if pkt_in.dp not in self.topology[dpid]:
             self.topology.setdefault(dpid, {})[pkt_in.dp] = in_port
             self.topology.setdefault(pkt_in.dp, {})[dpid] = pkt_in.port
@@ -329,7 +356,7 @@ class StateLearner(app_manager.RyuApp):
         self.mac_to_port.setdefault(dpid, {})
         self.mac_to_port[dpid][src] = in_port
         should_add_flow = False
-        self.logger.info("Packet in on %d to %s (%x)" % (dpid, dst, eth.ethertype))
+        self.logger.debug("Packet in on %d to %s (%x)" % (dpid, dst, eth.ethertype))
         path = self.decide_best_path(datapath.id, dst, dm.latency)
         if path:
             should_add_flow = True
@@ -341,7 +368,7 @@ class StateLearner(app_manager.RyuApp):
             ports = [self.mac_to_port[dpid][dst]]
         else:
             self.logger.debug("Flooding!")
-            should_add_flow = eth.ethertype == 0x806
+            should_add_flow = (eth.ethertype == 0x806 and dst == "ff:ff:ff:ff:ff:ff")
             ports = self.flood_ports(ofproto, dpid, in_port)
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port) for out_port in ports]
 

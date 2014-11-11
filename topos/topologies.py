@@ -1,12 +1,4 @@
 from mininet.topo import Topo
-from mininet.net import Mininet
-from mininet.node import CPULimitedHost
-from mininet.node import RemoteController
-from mininet.link import TCLink, TCIntf
-from mininet.util import dumpNodeConnections
-from mininet.log import setLogLevel
-
-from topo_utils import test_performance
 
 class DenseTopo(Topo):
 
@@ -90,17 +82,3 @@ class SimpleTopo(Topo):
 
         for h, s in zip(hs, switches):
             self.addLink(h, s, bw=0.5, delay='0ms', loss=1, use_htb=True)
-
-def topoTest():
-    "Create network and run simple performance test"
-    topo = ITATopo()
-    net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink, controller=RemoteController)
-    h1, h2, h3 = net.hosts
-    net.start()
-    #print test_performance(net, h1, h2)
-    net.interact()
-    net.stop()
-
-if __name__ == '__main__':
-    setLogLevel('info')
-    topoTest()
