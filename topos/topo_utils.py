@@ -28,8 +28,8 @@ def convert_speed(stringg):
         return val
     raise Exception
 
-def test_pings(net, h1, h2, number_pings=10):
-    time.sleep(2)
+def test_pings(net, h1, h2, number_pings=20):
+    time.sleep(30)
     lines = h1.cmd('ping -c{} {}'.format(number_pings, h2.IP())).splitlines()
     if len(lines) < 2:
         raise Exception(lines)
@@ -37,12 +37,11 @@ def test_pings(net, h1, h2, number_pings=10):
     ploss = float(re.search(loss_r, loss_line).group(1))/100.0
     stats = lines[-1]
     res_stats = re.search(r'([\d\.]+)/([\d\.]+)/([\d\.]+)/([\d\.]+)', stats)
+    time.sleep(2)
     if res_stats:
         pmin, pavg, pmax, pmdev = [float(x) for x in res_stats.groups()]
-        time.sleep(2)
         return pmin, pavg, pmax, pmdev, ploss
     else:
-        time.sleep(2)
         return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 def start_iperf(client, server):

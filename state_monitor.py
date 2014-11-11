@@ -31,7 +31,8 @@ class LinkStats(object):
 
     def __init__(self):
         self.bw = 0.0
-        self.latency = 0.0
+        self.latency = None
+        self.last_latency = 0.0
         self.drop = 0.0
         self.jitter = 0.0
 
@@ -62,8 +63,12 @@ class LinkStats(object):
         self.last_update = now
 
     def add_latency(self, latency):
-        self.jitter = self.jitter + (abs(latency - self.latency) - self.jitter)/16.0
-        self.latency = latency
+        self.jitter = self.jitter + (abs(latency - self.last_latency) - self.jitter)/16.0
+        self.last_latency = latency
+        if self.latency is None:
+            self.latency = latency
+        else:
+            self.latency = (latency + self.latency)/2
 
 class StateLearner(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -74,6 +79,7 @@ class StateLearner(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(StateLearner, self).__init__(*args, **kwargs)
+        self.logger.setLevel(49)
 
         wsgi = kwargs['wsgi']
         wsgi.register(StateTopologyController, {'topology_api_app': self})
@@ -214,6 +220,8 @@ class StateLearner(app_manager.RyuApp):
                     else:
                         frontier.append((neigh, el))
             visited.add(el)
+        ports_ignored = sum(len(result[x]) for x in result)
+        self.logger.info("Changed spanning tree. %d ports ignored" % ports_ignored)
         self.st_ignored_ports = result
 
     @set_ev_cls(ofp_event.EventOFPStateChange, [MAIN_DISPATCHER, DEAD_DISPATCHER])
@@ -236,10 +244,22 @@ class StateLearner(app_manager.RyuApp):
         elif ev.state == DEAD_DISPATCHER:
             if datapath.id in self.datapaths:
                 self.logger.info('unregister datapath: %016x', datapath.id)
-                del self.datapaths[datapath.id]
-                del self.topology[datapath.id]  
-                del self.ports_stats[datapath.id]
-                del self.mac_to_port[datapath.id]
+                try:
+                    del self.datapaths[datapath.id]
+                except KeyError:
+                    pass
+                try:
+                    del self.topology[datapath.id]  
+                except KeyError:
+                    pass
+                try:
+                    del self.ports_stats[datapath.id]
+                except KeyError:
+                    pass
+                try:
+                    del self.mac_to_port[datapath.id]
+                except KeyError:
+                    pass
                 closests = [k for k in self.closest_dpid if self.closest_dpid[k] == datapath.id]
                 for c in closests:
                     del self.closest_dpid[c]
@@ -308,7 +328,7 @@ class StateLearner(app_manager.RyuApp):
             out_group=ofproto.OFPG_ANY,
             flags=ofproto_v1_3.OFPFF_SEND_FLOW_REM, match=match, instructions=inst)
         datapath.send_msg(mod)
-        self.logger.debug("Adding flow on %d: " % datapath.id, src, dst, actions[0])
+        self.logger.info("Adding flow on %d" % datapath.id)
 
     def process_latency_packet(self, msg):
         pkt_in = LatencyMonitorPacket.parser(msg.data)
@@ -356,7 +376,7 @@ class StateLearner(app_manager.RyuApp):
         self.mac_to_port.setdefault(dpid, {})
         self.mac_to_port[dpid][src] = in_port
         should_add_flow = False
-        self.logger.debug("Packet in on %d to %s (%x)" % (dpid, dst, eth.ethertype))
+        #self.logger.info("Packet in on %d to %s (%x)" % (dpid, dst, eth.ethertype))
         path = self.decide_best_path(datapath.id, dst, dm.latency)
         if path:
             should_add_flow = True
