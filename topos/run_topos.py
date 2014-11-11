@@ -1,11 +1,9 @@
 from mininet.net import Mininet
 from mininet.node import CPULimitedHost
 from mininet.node import RemoteController
-from mininet.link import TCLink, TCIntf
-from mininet.util import dumpNodeConnections
+from mininet.link import TCLink
 from mininet.log import setLogLevel
 
-from topo_utils import test_performance
 from topologies import SimpleTopo, DenseTopo, ComplexTopo
 
 def runAndInteractTopology():
