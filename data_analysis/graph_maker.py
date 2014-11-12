@@ -3,7 +3,6 @@
 
 import random
 import re
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
 ree = r"(\d+) (\d+) - \((.*),(.*),(.*),(.*),(.*)\) - (\d\.\d+)"
