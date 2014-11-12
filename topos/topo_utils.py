@@ -28,11 +28,21 @@ def convert_speed(stringg):
         return val
     raise Exception
 
-def test_pings(net, h1, h2, number_pings=20):
-    time.sleep(30)
+latencies_r = r"time=(\d+\.?\d*) ms"
+
+def measure_jitter(latencies):
+    jitter = 0.0
+    for prev, l in zip(latencies,latencies[1:]):
+        jitter = jitter + (abs(l - prev) - jitter)/16.0
+    return jitter
+
+def test_pings(net, h1, h2, number_pings=40):
+    time.sleep(80)
     lines = h1.cmd('ping -c{} {}'.format(number_pings, h2.IP())).splitlines()
     if len(lines) < 2:
         raise Exception(lines)
+    results = [float(re.search(latencies_r, line).group(1)) for line in lines if re.search(latencies_r, line)]
+    jitter = measure_jitter(results)
     loss_line = lines[-2]
     ploss = float(re.search(loss_r, loss_line).group(1))/100.0
     stats = lines[-1]
@@ -40,9 +50,9 @@ def test_pings(net, h1, h2, number_pings=20):
     time.sleep(2)
     if res_stats:
         pmin, pavg, pmax, pmdev = [float(x) for x in res_stats.groups()]
-        return pmin, pavg, pmax, pmdev, ploss
+        return pmin, pavg, pmax, pmdev, ploss, jitter
     else:
-        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 def start_iperf(client, server):
     server.cmd('killall -9 iperf')

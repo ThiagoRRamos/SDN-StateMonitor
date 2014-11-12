@@ -35,6 +35,7 @@ class LinkStats(object):
         self.last_latency = 0.0
         self.drop = 0.0
         self.jitter = 0.0
+        self.jitter_countdown = 4
 
         self.cumulative_tx = {'packets': 0, 'errors': 0, 'bytes': 0, 'dropped': 0}
         self.speed_tx = {'packets': 0, 'errors': 0, 'bytes': 0, 'dropped': 0}
@@ -63,7 +64,12 @@ class LinkStats(object):
         self.last_update = now
 
     def add_latency(self, latency):
-        self.jitter = self.jitter + (abs(latency - self.last_latency) - self.jitter)/16.0
+        print "Adding latency", latency
+        if self.jitter_countdown > 0:
+            self.jitter_countdown -= 1
+        else:
+            self.jitter = self.jitter + (abs(latency - self.last_latency) - self.jitter)/16.0
+            print "Jitter is", self.jitter
         self.last_latency = latency
         if self.latency is None:
             self.latency = latency

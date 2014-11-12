@@ -19,9 +19,10 @@ def testLatency(delay, jitter):
         net.start()
         h1, h2 = net.hosts[:2]
         res = str(test_pings(net, h1, h2))
-        j = requests.get("http://localhost:8080/json/latencies").json()
-        meas = j['1']['2'] + j['2']['1']
-        print "{} {} - {} - {}".format(delay, jitter, res, meas)
+        l = requests.get("http://localhost:8080/json/latencies").json()
+        j = requests.get("http://localhost:8080/json/jitters").json()
+        meas = l['1']['2'] + l['2']['1']
+        print "{} {} - {} - {} {} {}".format(delay, jitter, res, meas, j['1']['2'], j['2']['1'])
         net.stop()
 
 if __name__ == '__main__':
