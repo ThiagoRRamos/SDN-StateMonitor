@@ -18,7 +18,7 @@ def testLatency(delay, jitter):
         net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink, controller=RemoteController)
         net.start()
         h1, h2 = net.hosts[:2]
-        res = str(test_pings(net, h1, h2))
+        res = str(test_pings(h1, h2))
         l = requests.get("http://localhost:8080/json/latencies").json()
         j = requests.get("http://localhost:8080/json/jitters").json()
         meas = l['1']['2'] + l['2']['1']

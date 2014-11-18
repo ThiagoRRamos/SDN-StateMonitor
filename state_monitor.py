@@ -64,12 +64,10 @@ class LinkStats(object):
         self.last_update = now
 
     def add_latency(self, latency):
-        print "Adding latency", latency
         if self.jitter_countdown > 0:
             self.jitter_countdown -= 1
         else:
             self.jitter = self.jitter + (abs(latency - self.last_latency) - self.jitter)/16.0
-            print "Jitter is", self.jitter
         self.last_latency = latency
         if self.latency is None:
             self.latency = latency

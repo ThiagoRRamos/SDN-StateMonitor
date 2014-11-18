@@ -36,9 +36,9 @@ def measure_jitter(latencies):
         jitter = jitter + (abs(l - prev) - jitter)/16.0
     return jitter
 
-def test_pings(net, h1, h2, number_pings=40):
+def test_pings(h1, h2, number_pings=40):
     time.sleep(80)
-    lines = h1.cmd('ping -c{} {}'.format(number_pings, h2.IP())).splitlines()
+    lines = h1.cmd('ping -i 0.2 -c{} {}'.format(number_pings, h2.IP())).splitlines()
     if len(lines) < 2:
         raise Exception(lines)
     results = [float(re.search(latencies_r, line).group(1)) for line in lines if re.search(latencies_r, line)]
@@ -57,4 +57,6 @@ def test_pings(net, h1, h2, number_pings=40):
 def start_iperf(client, server):
     server.cmd('killall -9 iperf')
     server.sendCmd("iperf -s -u")
-    client.sendCmd("iperf -c -u")
+    print client.cmd("iperf -c {} -u".format(server.IP()))
+    server.sendInt()
+    print server.waitOutput()
