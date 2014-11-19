@@ -11,6 +11,7 @@ class StateTopologyController(ControllerBase):
     def __init__(self, req, link, data, **config):
         super(StateTopologyController, self).__init__(req, link, data, **config)
         self.app = data['topology_api_app']
+        #self.logger.setLevel(49)
 
     @route('topology', '/json/topology', methods=['GET'])
     def json_switches(self, req, **kwargs):
