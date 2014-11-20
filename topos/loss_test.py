@@ -23,7 +23,7 @@ def testLoss(delay, loss):
     pmin, pavg, pmax, pmdev, ploss, jitter = test_pings(h1, h2, 80)
     time.sleep(1)
     l = requests.get("http://localhost:8080/json/link?o=1&d=2").json()
-    print loss, ploss, l['round_loss']
+    print float(loss)/100, ploss, l['round_loss']
     net.stop()
 
 if __name__ == '__main__':
