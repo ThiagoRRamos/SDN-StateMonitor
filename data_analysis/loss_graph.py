@@ -25,8 +25,10 @@ print model
 model = [100*x for x in sorted(model)]
 f_result = [100 * sum(result[x/100])/len(result[x/100]) for x in model]
 f_ping = [100 * sum(ping[x/100])/len(ping[x/100]) for x in model]
+f_model = [100*(2*(x/100) - (x/100)*(x/100)) for x in model]
 plt.plot(model, f_result,'g--', label='Controlador')
 plt.plot(model, f_ping,'r--', label='Ping')
+plt.plot(model, f_model,'b--', label='Espe')
 plt.title("Perda de pacotes")
 plt.legend()
 plt.grid(True)
