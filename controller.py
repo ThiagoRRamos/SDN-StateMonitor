@@ -106,14 +106,29 @@ class StateTopologyController(ControllerBase):
         return Response(body=str(h))
        
     @route('paths', '/paths', methods=['GET'])    
-    def decided_paths(reslf, req, **kwargs):
+    def decided_paths(self, req, **kwargs):
         h = HTML()
         b = h.body
         table = b.table(border='1')
         trh = table.tr
         trh.th("Datapath Origin")
-        trh.th("Mac Destiny")
-        for dp in datapaths:
-            for mac in self.app.closest_dpid:
-                pass
+        trh.th("Datapath Destiny")
+        for i in xrange(5):
+            trh.th(self.app.get_criteria(i).__name__)
+        for dp in self.app.datapaths:
+            for dp2 in self.app.datapaths:
+                if dp != dp2:
+                    row = table.tr
+                    row.td(str(dp))
+                    row.td(str(dp2))
+                    for i in xrange(5):
+                        path = self.app.do_decide_best_path(dp, dp2, self.app.get_criteria(i))
+                        row.td(str(path))
         return Response(body=str(h))
+
+    @route('set_criteria', '/set', methods=['GET'])    
+    def set_criterja(self, req, **kwargs):
+        self.app.criteria = int(req.params.get('f'))
+        name = self.app.get_criteria().__name__
+        body = json.dumps({"status": "OK", "message": "Using now {}".format(name)})
+        return Response(content_type='application/json', body=body)

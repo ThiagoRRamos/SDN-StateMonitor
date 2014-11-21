@@ -398,13 +398,7 @@ class StateLearner(app_manager.RyuApp):
         self.mac_to_port[dpid][src] = in_port
         should_add_flow = False
         self.logger.debug("Packet in on %d to %s (%x)" % (dpid, dst, eth.ethertype))
-        crit = self.get_criteria()
-        path = self.decide_best_path(datapath.id, dst, crit)
-        if path:
-            should_add_flow = True
-            self.logger.info("Decided via path: %d - %s", datapath.id, str(path))
-            ports = [self.topology[dpid][path[1]]]
-        elif dst in self.mac_to_port[dpid]:
+        if dst in self.mac_to_port[dpid]:
             should_add_flow = True
             self.logger.debug("Decided via learning")
             ports = [self.mac_to_port[dpid][dst]]

@@ -1,0 +1,39 @@
+Using now packet_loss
+(656.925, 835.565, 2362.828, 390.859, 0.22, 60.327494202600846)
+*** Iperf: testing UDP bandwidth between h1 and h6
+*** Results: ['10M', '860 Kbits/sec', '10.0 Mbits/sec']
+['10M', '860 Kbits/sec', '10.0 Mbits/sec']
+Using now available_speed
+(550.984, 597.527, 636.566, 21.454, 0.25, 18.382798017155345)
+*** Iperf: testing UDP bandwidth between h1 and h6
+*** Results: ['10M', '7.69 Mbits/sec', '7.69 Mbits/sec']
+['10M', '7.69 Mbits/sec', '7.69 Mbits/sec']
+Using now jitter
+(681.274, 701.338, 718.092, 8.944, 0.35, 7.009194798877729)
+*** Iperf: testing UDP bandwidth between h1 and h6
+*** Results: ['10M', '874 Kbits/sec', '10.0 Mbits/sec']
+['10M', '874 Kbits/sec', '10.0 Mbits/sec']
+Using now latency
+(447.161, 499.196, 563.646, 25.382, 0.32, 25.258210734762528)
+*** Iperf: testing UDP bandwidth between h1 and h6
+*** Results: ['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+
+Default
+
+(429.416, 539.717, 1606.928, 215.051, 0.35, 34.85912296996608)
+*** Iperf: testing UDP bandwidth between h1 and h6
+*** Results: ['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+(455.511, 500.591, 545.212, 21.937, 0.37, 20.76797989611437)
+*** Iperf: testing UDP bandwidth between h1 and h6
+*** Results: ['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+(459.702, 524.239, 1032.015, 106.868, 0.35, 67.59632246735184)
+*** Iperf: testing UDP bandwidth between h1 and h6
+*** Results: ['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+(447.661, 497.276, 528.271, 21.146, 0.42, 23.532704007989434)
+*** Iperf: testing UDP bandwidth between h1 and h6
+*** Results: ['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+['10M', '973 Kbits/sec', '10.0 Mbits/sec']

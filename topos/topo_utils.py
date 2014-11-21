@@ -37,8 +37,8 @@ def measure_jitter(latencies):
     return jitter
 
 def test_pings(h1, h2, number_pings=40):
-    time.sleep(80)
-    lines = h1.cmd('ping -i 0.2 -c{} {}'.format(number_pings, h2.IP())).splitlines()
+    #time.sleep(80)
+    lines = h1.cmd('ping -i 0.4 -c{} {}'.format(number_pings, h2.IP())).splitlines()
     if len(lines) < 2:
         raise Exception(lines)
     results = [float(re.search(latencies_r, line).group(1)) for line in lines if re.search(latencies_r, line)]

@@ -113,3 +113,34 @@ class SimpleTopo(Topo):
 
         for h, s in zip(hs, switches):
             self.addLink(h, s, bw=0.5, delay='0ms', loss=1, use_htb=True)
+
+class SpecialTopo(Topo):
+
+    def __init__(self, delay, jitter, loss=3, **opts):
+        Topo.__init__(self, **opts)
+
+        delay_str = "{}ms".format(delay)
+        jitter_str = "{}ms".format(jitter)
+
+        s1 = self.addSwitch('s1', ip='161.24.0.1/24', protocols='OpenFlow13')
+        s2 = self.addSwitch('s2', ip='161.24.0.2/24', protocols='OpenFlow13')
+        s3 = self.addSwitch('s3', ip='161.24.0.3/24', protocols='OpenFlow13')
+        s4 = self.addSwitch('s4', ip='161.24.0.4/24', protocols='OpenFlow13')
+        s5 = self.addSwitch('s5', ip='161.24.0.5/24', protocols='OpenFlow13')
+        s6 = self.addSwitch('s6', ip='161.24.0.6/24', protocols='OpenFlow13')
+
+        hs = [self.addHost('h%d' % (x+1), ip='161.24.0.%d/24' % (x+7)) for x in xrange(6)]
+        ss = [s1, s2, s3, s4, s5, s6]
+
+        self.addLink(s1, s2, bw=10, delay='50ms', loss=5, jitter='20ms', use_htb=True)
+        self.addLink(s2, s3, bw=10, delay='50ms', loss=5, jitter='20ms', use_htb=True)
+        self.addLink(s1, s4, bw=1, delay='150ms', loss=10, jitter='10ms', use_htb=True)
+        self.addLink(s2, s5, bw=100, delay='150ms', loss=10, jitter='10ms', use_htb=True)
+        self.addLink(s3, s6, bw=1, delay='150ms', loss=10, jitter='10ms', use_htb=True)
+        self.addLink(s2, s4, bw=1, delay='100ms', loss=1, jitter='10ms', use_htb=True)
+        self.addLink(s3, s5, bw=1, delay='100ms', loss=1, jitter='10ms', use_htb=True)
+        self.addLink(s4, s5, bw=10, delay='100ms', loss=5, jitter='5ms', use_htb=True)
+        self.addLink(s5, s6, bw=10, delay='100ms', loss=5, jitter='5ms', use_htb=True)
+
+        for h, s in zip(hs, ss):
+            self.addLink(h, s, bw=100, delay='0ms', loss=0)
