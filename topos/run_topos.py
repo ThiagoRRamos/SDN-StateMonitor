@@ -28,12 +28,12 @@ def testDecisionTopology():
     time.sleep(10)
     h1, h2, h3, h4, h5, h6 = net.hosts
     pairs = [(h1, h2), (h2, h3), (h4, h5), (h5, h6), (h1, h4), (h2, h5), (h3, h6), (h2, h4), (h3, h5)]
-    #for a,b in pairs:
-    #    net.ping([a,b])
-    #    net.iperf([a,b])
+    for a,b in pairs:
+        net.ping([a,b])
+        net.iperf([a,b])
     for i in xrange(4):
-        #j = requests.get("http://localhost:8080/set?f={}".format(i)).json()
-        #print j["message"]
+        j = requests.get("http://localhost:8080/set?f={}".format(i)).json()
+        print j["message"]
         print test_pings(h1, h6, 40)
         print net.iperf([h1,h6], l4Type='UDP', udpBw='10M')
         time.sleep(20)

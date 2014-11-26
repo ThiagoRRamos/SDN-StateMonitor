@@ -1,0 +1,13 @@
+Using now packet_loss
+(539.67, 605.69, 788.659, 44.282, 0.3, 26.342864752376713)
+['10M', '919 Kbits/sec', '10.0 Mbits/sec']
+Using now available_speed
+(553.726, 599.582, 641.284, 19.7, 0.37, 16.123122391046042)
+['10M', '8.10 Mbits/sec', '8.10 Mbits/sec']
+Using now jitter
+(674.344, 699.584, 720.701, 10.057, 0.25, 10.77113703625033)
+['10M', '877 Kbits/sec', '10.0 Mbits/sec']
+Using now latency
+(460.006, 499.514, 553.765, 23.984, 0.3, 23.255146074094977)
+['10M', '973 Kbits/sec', '10.0 Mbits/sec']
+mininet> 
