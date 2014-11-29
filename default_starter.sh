@@ -1,1 +1,0 @@
-~/ryu/bin/ryu-manager default_controller.py
